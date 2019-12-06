@@ -1,0 +1,293 @@
+---
+- hosts: cluster
+  remote_user: root
+  vars_files:
+    - vars/quobyte.yaml
+  tasks:
+    - name: Disable SE Linux
+      command: /usr/sbin/setenforce 0
+      ignore_errors: yes
+      no_log: True
+    - name: Ensure SELinux is set to disabled mode
+      lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: SELINUX=disabled
+    - name: Disable swap
+      shell:
+        cmd: swapoff -a
+    - name: Remove swap from fstab
+      lineinfile:
+        path: /etc/fstab
+        state: absent
+        regexp: '^%swap'
+    - name: Copy chrony package
+      copy:
+         src: packages/chrony
+         dest: /tmp/
+    - name: Copy java package
+      copy:
+         src: packages/java
+         dest: /tmp/
+    - name: Copy quobyte-server package
+      copy:
+         src: packages/server
+         dest: /tmp/
+    - name: Copy quobyte-client package
+      copy:
+         src: packages/client
+         dest: /tmp/
+    - name: Find rpm file in /tmp/chrony
+      find:
+        paths: /tmp/chrony
+        patterns: "*.rpm"
+      register: rpm_file_chrony
+    - set_fact:
+        rpm_list_chrony: "{{ rpm_file_chrony.files | map(attribute='path') | list}}"
+    - name: Installing chrony rpm file
+      yum:
+        name: "{{rpm_list_chrony}}"
+        state: present
+    - name: Find rpm files in /tmp/java
+      find:
+        paths: /tmp/java
+        patterns: "*.rpm"
+      register: rpm_files_java
+    - set_fact:
+        rpm_list_java: "{{ rpm_files_java.files | map(attribute='path') | list}}"
+    - name: Installing java rpm files
+      yum:
+        name: "{{rpm_list_java}}"
+        state: present
+    - name: Find rpm file in /tmp/server
+      find:
+        paths: /tmp/server
+        patterns: "*.rpm"
+      register: rpm_file_server
+    - set_fact:
+        rpm_list_server: "{{ rpm_file_server.files | map(attribute='path') | list}}"
+    - name: Installing server rpm file
+      yum:
+        name: "{{rpm_list_server}}"
+        state: present
+    - name: Find rpm file in /tmp/client
+      find: 
+        paths: /tmp/client
+        patterns: "*.rpm"
+      register: rpm_file_client
+    - set_fact:
+        rpm_list_client: "{{ rpm_file_client.files | map(attribute='path') | list}}"
+    - name: Installing client rpm file
+      yum:
+        name: "{{rpm_list_client}}"
+        state: present
+    - name: Configure quobyte server registry
+      lineinfile:
+        path: /etc/quobyte/host.cfg
+        regexp: '^registry='
+        line: registry={{ registry }}
+    - name: Configure quobyte client configuration
+      blockinfile:
+        path: /etc/quobyte/client-service.cfg
+        block: |
+          registry={{ registry }}
+          mount_point={{ mountpoint }}
+          options=default_permissions
+          disable-xattrs
+    - name: Set quobyte-server tuned profile
+      shell:
+        cmd: /usr/sbin/tuned-adm profile quobyte-server-performance
+    - name: Create registry directory
+      file:
+        path: /var/lib/quobyte/devices/registry-bootstrap
+        state: directory
+    - name: Create registry device
+      file:
+        path: /var/lib/quobyte/devices/registry-bootstrap/QUOBYTE_DEV_SETUP
+        state: touch
+        owner: quobyte
+        group: quobyte
+- hosts: bootstrap
+  vars_files:
+    - vars/quobyte.yaml
+  tasks:
+    - name: Install Quobyte bootstrap
+      shell:
+        cmd: /usr/bin/qbootstrap -d -f -y /var/lib/quobyte/devices/registry-bootstrap
+    - name: Start and enable Quobyte registry service
+      service:
+        name: quobyte-registry
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte metadata service
+      service:
+        name: quobyte-metadata
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte data service
+      service:
+        name: quobyte-data
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte api service
+      service:
+        name: quobyte-api
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte webconsole  service
+      service:
+        name: quobyte-webconsole
+        state: restarted
+        enabled: yes
+    - name: Restart quobyte-client
+      service:
+        name: quobyte-client
+        state: restarted
+        enabled: yes
+- hosts: nodes
+  vars_files:
+  - vars/quobyte.yaml
+  tasks:
+    - name: Add node to cluster
+      shell:
+        cmd: /usr/bin/qmkdev -f -l quobyte-dev -t REGISTRY -d /var/lib/quobyte/devices/registry-bootstrap 
+    - name: Start and enable Quobyte registry service
+      service:
+        name: quobyte-registry
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte metadata service
+      service:
+        name: quobyte-metadata
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte data service
+      service:
+        name: quobyte-data
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte api service
+      service:
+        name: quobyte-api
+        state: restarted
+        enabled: yes
+    - name: Start and enable Quobyte webconsole  service
+      service:
+        name: quobyte-webconsole
+        state: restarted
+        enabled: yes
+    - name: Restart quobyte-client
+      service:
+        name: quobyte-client
+        state: restarted
+        enabled: yes
+- hosts: clients
+  vars_files:
+  - vars/quobyte.yaml
+  tasks:  
+    - name: Disable SE Linux
+      command: /usr/sbin/setenforce 0
+      ignore_errors: yes
+      no_log: True
+    - name: Ensure SELinux is set to disabled mode
+      lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: SELINUX=disabled
+    - name: Copy chrony package
+      copy:
+         src: packages/chrony
+         dest: /tmp/
+    - name: Copy java package
+      copy:
+         src: packages/java
+         dest: /tmp/
+    - name: Copy quobyte-client package
+      copy:
+         src: packages/client
+         dest: /tmp/
+    - name: Find rpm file in /tmp/chrony
+      find:
+        paths: /tmp/chrony
+        patterns: "*.rpm"
+      register: rpm_file_chrony
+    - set_fact:
+        rpm_list_chrony: "{{ rpm_file_chrony.files | map(attribute='path') | list}}"
+    - name: Installing chrony rpm file
+      yum:
+        name: "{{rpm_list_chrony}}"
+        state: present
+    - name: Find rpm files in /tmp/java
+      find:
+        paths: /tmp/java
+        patterns: "*.rpm"
+      register: rpm_files_java
+    - set_fact:
+        rpm_list_java: "{{ rpm_files_java.files | map(attribute='path') | list}}"
+    - name: Installing java rpm files
+      yum:
+        name: "{{rpm_list_java}}"
+        state: present
+    - name: Find rpm file in /tmp/client
+      find:
+        paths: /tmp/client
+        patterns: "*.rpm"
+      register: rpm_file_client
+    - set_fact:
+        rpm_list_client: "{{ rpm_file_client.files | map(attribute='path') | list}}"
+    - name: Installing client rpm file
+      yum:
+        name: "{{rpm_list_client}}"
+        state: present
+    - name: Configure quobyte client configuration
+      blockinfile:
+        path: /etc/quobyte/client-service.cfg
+        block: |
+          registry={{ registry }}
+          mount_point={{ mountpoint }}
+          options=default_permissions
+          disable-xattrs
+    - name: Set quobyte-client tuned profile
+      shell:
+        cmd: /usr/sbin/tuned-adm profile quobyte-client-performance
+    - name: Restart quobyte-client
+      service:
+        name: quobyte-client
+        state: restarted
+        enabled: yes
+- hosts: diskformat
+  vars_files:
+  - vars/quobyte.yaml
+  tasks:
+    - name: Create metadata disk
+      shell:
+        cmd: /usr/bin/qmgmt device list-unformatted |grep {{ mddisksize }} |grep {{ inventory_hostname }} |awk 'NR==1{print $1}'
+      register: metadata
+    - shell: "/usr/bin/qmgmt device make {{ item }} M"
+      with_items:
+        - "{{ metadata.stdout_lines }}"
+    - name: Create data disk(s)
+      shell:
+        cmd: /usr/bin/qmgmt device list-unformatted |grep {{ inventory_hostname }} |awk '{print $1}'
+      register: data
+    - shell: "/usr/bin/qmgmt device make {{ item }} D"
+      with_items:
+        - "{{ data.stdout_lines }}"
+    - name: Sleep for 60 seconds and continue with play
+      wait_for: timeout=60
+      delegate_to: localhost
+- hosts: diskformat,!nodes
+  vars_files:
+  - vars/quobyte.yaml
+  tasks:
+    - name: Copy default volume configuration
+      copy:
+         src: templates/Default-replicated.conf
+         dest: /tmp/
+    - name: Import volume configuration
+      shell:
+        cmd: /usr/bin/qmgmt volume config import Default-replicated /tmp/Default-replicated.conf
+    - name: Create default volumes
+      shell:
+        cmd: /usr/bin/qmgmt volume create vol0 root root Default-replicated
+
