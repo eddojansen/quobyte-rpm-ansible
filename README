@@ -1,11 +1,19 @@
 
-This ansible playbook is prepared for Dark site Centos7 installations and includes all required binaries to install and configure a Quobyte cluster that can immediately be used to write data to.
-Quobyte clients can be installed using the same playbook.
+This ansible playbook is designed for Centos 7 based Quobyte installations on Dark sites. The inventory folder includes empty subfolders for all required binaries to install and configure a Quobyte cluster that can immediately be used to write data to (batteries included).
+
+The empty folders need to be populated with the required packages:
+(Current) Chrony package
+(Current) Java and dependencies packages (use yum install -y --downloadonly java-1.8.0-openjdk-headless)
+(Current) Quobyte server packages (from private repository)
+(Current) Quobyte client packages (from private repository)
+
+The Quobyte client will be installed on the storage nodes, additional clients can be installed using the same playbook by populating the client nodes in the [clients] section of the inventory file.
 
 Terminology:
 
-Management Node
-- A computer (can be a seperate node or the first node in the cluster) with ansible installed
+Bootstrap
+- Has CentOS >= 7 up and running
+- The first node in the cluster with ansible installed
 - Has root access to all nodes and clients that should be part of the cluster by name
 - Has passwordless key access to all cluster and client nodes
 - The host key for all cluster and client nodes has been accepted (by connecting to each node once)
@@ -34,7 +42,7 @@ Preparation:
      mddisksize: The size of the flash device used for metadata on each node 64 (output size from lsblk) (only required when using [diskformat])
      mountpoint: Mountpoint name for the Quobyte client (example: /quobyte)
 5) Start the installation
- a) Within the quobyte-rpm-ansible directory run the following command on the Management Node
+ a) Within the quobyte-rpm-ansible directory run the following command on the Bootstrap Node
 
    ansible-playbook -b -i inventory quobyte.yaml
  

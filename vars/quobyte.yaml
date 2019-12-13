@@ -1,4 +1,3 @@
 registry: registry.quobyte.local
 mountpoint: /quobyte
 mddisksize: 64
-

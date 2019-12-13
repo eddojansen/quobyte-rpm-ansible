@@ -181,10 +181,64 @@
         name: quobyte-client
         state: restarted
         enabled: yes
+- hosts: diskformat
+  vars_files:
+  - vars/quobyte.yaml
+  tasks:
+    - name: Sleep for 20 seconds and continue with play
+      wait_for: timeout=20
+      delegate_to: localhost
+    - shell: /usr/bin/qmgmt device list-unformatted|grep {{ mddisksize }}|grep {{ inventory_hostname }}|awk 'NR==1{print $1}'
+      register: list
+      until: list.stdout.find("dev") != -1
+      retries: 300
+    - shell: /usr/bin/qmgmt device list-unformatted|grep {{ mddisksize }}|grep {{ inventory_hostname }}|awk 'NR==1{print $3}'
+      register: list2
+    - name: Create metadata disk
+      shell:
+        cmd: /usr/bin/qmgmt device list-unformatted|grep {{ mddisksize }}|grep {{ inventory_hostname }}|awk 'NR==1{print $1}'
+      register: metadata
+    - shell: /usr/bin/qmgmt device make {{ item }} M
+      with_items:
+        - "{{ metadata.stdout_lines }}"
+    - shell: /usr/bin/qmgmt device list-unformatted|grep {{ mddisksize }}|grep {{ inventory_hostname }}|awk '{print $3}'
+      register: list3
+    - set_fact: content2="{{ list2.stdout }}"
+    - name: Create data list
+      shell:
+        cmd: /usr/bin/qmgmt device list-unformatted|grep {{ inventory_hostname }}|grep -v {{ content2 }} |awk '{print $1}'
+      register: list5
+    - name: Create data disk(s)
+      shell:
+        cmd: /usr/bin/qmgmt device make {{ item }} D
+      with_items:
+        - "{{ list5.stdout_lines }}"
+    - shell: /usr/bin/qmgmt task list
+      register: list6
+      until: list6.stdout.find("SCHEDULED") == -1
+      retries: 300
+    - shell: /usr/bin/qmgmt task list
+      register: list7
+      until: list7.stdout.find("RUNNING") == -1
+      retries: 300
+- hosts: diskformat,!nodes
+  vars_files:
+  - vars/quobyte.yaml
+  tasks:
+    - name: Copy default volume configuration
+      copy:
+         src: templates/Default-replicated.conf
+         dest: /tmp/
+    - name: Import volume configuration
+      shell:
+        cmd: /usr/bin/qmgmt volume config import Default-replicated /tmp/Default-replicated.conf
+    - name: Create default volumes
+      shell:
+        cmd: /usr/bin/qmgmt volume create vol0 root root Default-replicated
 - hosts: clients
   vars_files:
   - vars/quobyte.yaml
-  tasks:  
+  tasks:
     - name: Disable SE Linux
       command: /usr/sbin/setenforce 0
       ignore_errors: yes
@@ -255,39 +309,3 @@
         name: quobyte-client
         state: restarted
         enabled: yes
-- hosts: diskformat
-  vars_files:
-  - vars/quobyte.yaml
-  tasks:
-    - name: Create metadata disk
-      shell:
-        cmd: /usr/bin/qmgmt device list-unformatted |grep {{ mddisksize }} |grep {{ inventory_hostname }} |awk 'NR==1{print $1}'
-      register: metadata
-    - shell: "/usr/bin/qmgmt device make {{ item }} M"
-      with_items:
-        - "{{ metadata.stdout_lines }}"
-    - name: Create data disk(s)
-      shell:
-        cmd: /usr/bin/qmgmt device list-unformatted |grep {{ inventory_hostname }} |awk '{print $1}'
-      register: data
-    - shell: "/usr/bin/qmgmt device make {{ item }} D"
-      with_items:
-        - "{{ data.stdout_lines }}"
-    - name: Sleep for 60 seconds and continue with play
-      wait_for: timeout=60
-      delegate_to: localhost
-- hosts: diskformat,!nodes
-  vars_files:
-  - vars/quobyte.yaml
-  tasks:
-    - name: Copy default volume configuration
-      copy:
-         src: templates/Default-replicated.conf
-         dest: /tmp/
-    - name: Import volume configuration
-      shell:
-        cmd: /usr/bin/qmgmt volume config import Default-replicated /tmp/Default-replicated.conf
-    - name: Create default volumes
-      shell:
-        cmd: /usr/bin/qmgmt volume create vol0 root root Default-replicated
-
